@@ -23,22 +23,36 @@ const SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 4;
 const CONFIRM_RETRIES: usize = 4;
 
+const CONFIRM_DELAY: u64 = 5000;
+const GATEWAY_DELAY: u64 = 2000;
+
 impl Miner {
     pub async fn send_and_confirm(
         &self,
         ixs: &[Instruction],
         dynamic_cus: bool,
         skip_confirm: bool,
+        fuckmesilly: u64,
     ) -> ClientResult<Signature> {
         let mut stdout = stdout();
         let signer = self.signer();
         let client = self.rpc_client.clone();
 
+        // Return error if balance is zero
+        let balance = client.get_balance(&signer.pubkey()).await.unwrap();
+        if balance <= 0 {
+            return Err(ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom("Insufficient SOL balance".into()),
+            });
+        }
+
+        // Build tx
         let (hash, slot) = client
             .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
             .await
             .unwrap();
-        let mut send_cfg = RpcSendTransactionConfig {
+        let send_cfg = RpcSendTransactionConfig {
             skip_preflight: false,
             preflight_commitment: Some(CommitmentLevel::Finalized),
             encoding: Some(UiTransactionEncoding::Base64),
@@ -76,7 +90,7 @@ impl Miner {
                                 units_consumed as u32 + 1000,
                             );
                             let cu_price_ix =
-                                ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+                                ComputeBudgetInstruction::set_compute_unit_price(fuckmesilly);
                             let mut final_ixs = vec![];
                             final_ixs.extend_from_slice(&[cu_budget_ix, cu_price_ix]);
                             final_ixs.extend_from_slice(ixs);
@@ -107,11 +121,14 @@ impl Miner {
         loop {
             match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
+                    // sigs.push(sig);
+
+                    // Confirm tx
                     if skip_confirm {
                         return Ok(sig);
                     }
                     for _ in 0..CONFIRM_RETRIES {
-                        std::thread::sleep(Duration::from_millis(2000));
+                        std::thread::sleep(Duration::from_millis(CONFIRM_DELAY));
                         match client.get_signature_statuses(&[sig]).await {
                             Ok(signature_statuses) => {
                                 for signature_status in signature_statuses.value {
@@ -126,6 +143,9 @@ impl Miner {
                                                 TransactionConfirmationStatus::Confirmed
                                                 | TransactionConfirmationStatus::Finalized => {
                                                     println!("Transaction landed!");
+                                                    std::thread::sleep(Duration::from_millis(
+                                                        GATEWAY_DELAY,
+                                                    ));
                                                     return Ok(sig);
                                                 }
                                             }
@@ -152,18 +172,7 @@ impl Miner {
 
             // Retry
             stdout.flush().ok();
-            let (hash, slot) = client
-                .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
-                .await
-                .unwrap();
-            send_cfg = RpcSendTransactionConfig {
-                skip_preflight: true,
-                preflight_commitment: Some(CommitmentLevel::Finalized),
-                encoding: Some(UiTransactionEncoding::Base64),
-                max_retries: Some(RPC_RETRIES),
-                min_context_slot: Some(slot),
-            };
-            tx.sign(&[&signer], hash);
+            std::thread::sleep(Duration::from_millis(GATEWAY_DELAY));
             attempts += 1;
             if attempts > GATEWAY_RETRIES {
                 return Err(ClientError {

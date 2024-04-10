@@ -16,7 +16,7 @@ impl Miner {
         println!("Generating challenge...");
         'send: loop {
             let ix = ore::instruction::register(signer.pubkey());
-            if self.send_and_confirm(&[ix], true, false).await.is_ok() {
+            if self.send_and_confirm(&[ix], true, false,0).await.is_ok() {
                 break 'send;
             }
         }

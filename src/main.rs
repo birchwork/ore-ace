@@ -50,14 +50,6 @@ struct Args {
 
     #[arg(
         long,
-        value_name = "NETWORK_URL_SEND",
-        help = "Network address of your RPC provider, for sendTx",
-        default_value = "https://api.mainnet-beta.solana.com"
-    )]
-    send_rpc: String,
-
-    #[arg(
-        long,
         value_name = "NETWORK_URL",
         help = "Network address of your RPC provider",
         global = true
@@ -184,7 +176,7 @@ struct ClaimArgs {
     amount: Option<f64>,
 
     #[arg(
-        long,
+        // long,
         value_name = "TOKEN_ACCOUNT_ADDRESS",
         help = "Token account to receive mining rewards."
     )]

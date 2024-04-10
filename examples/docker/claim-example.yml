@@ -1,0 +1,16 @@
+version: "0.1"
+
+services:
+  ore-group-1-001:
+    container_name: ore-group-1-001
+    image: ghcr.io/birchwork/ore-ace:latest
+    command:
+      - "--jito-enable"
+      - "--jito-fee"
+      - "<Jito fee>"
+      - "--rpc"
+      - "<Your rpc>"
+      - "--keypair"
+      - "<Your private key>"
+      - "claim"
+    restart: always

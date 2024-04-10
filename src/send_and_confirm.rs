@@ -37,6 +37,7 @@ impl Miner {
         let mut stdout = stdout();
         let signer = self.signer();
         let client = self.rpc_client.clone();
+        let query_client = self.query_rpc_client.clone();
 
         // Return error if balance is zero
         let balance = client.get_balance(&signer.pubkey()).await.unwrap();
@@ -48,7 +49,7 @@ impl Miner {
         }
 
         // Build tx
-        let (hash, slot) = client
+        let (hash, slot) = query_client
             .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
             .await
             .unwrap();
@@ -129,7 +130,7 @@ impl Miner {
                     }
                     for _ in 0..CONFIRM_RETRIES {
                         std::thread::sleep(Duration::from_millis(CONFIRM_DELAY));
-                        match client.get_signature_statuses(&[sig]).await {
+                        match query_client.get_signature_statuses(&[sig]).await {
                             Ok(signature_statuses) => {
                                 for signature_status in signature_statuses.value {
                                     if let Some(signature_status) = signature_status.as_ref() {

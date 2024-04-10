@@ -25,6 +25,7 @@ struct Miner {
     pub keypair_filepath: Option<String>,
     pub priority_fee: u64,
     pub rpc_client: Arc<RpcClient>,
+    pub query_rpc_client: Arc<RpcClient>,
     pub jito_fee: u64,
     pub jito_enable: bool,
 }
@@ -55,6 +56,14 @@ struct Args {
         global = true
     )]
     rpc: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "QUERY_NETWORK_URL",
+        help = "Network address of your query RPC provider",
+        global = true
+    )]
+    query_rpc: Option<String>,
 
     #[clap(
         global = true,
@@ -214,12 +223,15 @@ async fn main() {
     };
 
     // Initialize miner.
+    let query_cluster = args.query_rpc.unwrap_or("https://api.mainnet-beta.solana.com/".to_string());
     let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::finalized());
+    let query_client = RpcClient::new_with_commitment(query_cluster, CommitmentConfig::finalized());
 
     let miner = Arc::new(Miner::new(
         Arc::new(rpc_client),
+        Arc::new(query_client),
         args.priority_fee,
         Some(default_keypair),
         args.jito_fee,
@@ -264,6 +276,7 @@ async fn main() {
 impl Miner {
     pub fn new(
         rpc_client: Arc<RpcClient>,
+        query_rpc_client: Arc<RpcClient>,
         priority_fee: u64,
         keypair_filepath: Option<String>,
         jito_fee: u64,
@@ -271,6 +284,7 @@ impl Miner {
     ) -> Self {
         Self {
             rpc_client,
+            query_rpc_client,
             keypair_filepath,
             priority_fee,
             jito_fee,

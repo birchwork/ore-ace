@@ -66,6 +66,10 @@ impl Miner {
         let mut count = 0_u16;
         let mut rng = rand::thread_rng();
 
+        // check submit time
+        let submit_retries: u128 = 3;
+        let submit_timeout: u128 = 60000;
+
         let jito_addresses = vec![
             "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
             "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
@@ -112,9 +116,20 @@ impl Miner {
             let (next_hash, nonce) =
                 self.find_next_hash_par(proof.hash.into(), treasury.difficulty.into(), threads);
 
+            let mut current_submit_retry: u128 = 0;
+            let start_time: std::time::Instant = std::time::Instant::now();
             // Submit mine tx.
             // Use busses randomly so on each epoch, transactions don't pile on the same busses
             'submit: loop {
+                if current_submit_retry.ge(&submit_retries) {
+                    println!("Failed to submit hash for validation.");
+                    break;
+                }
+
+                if start_time.elapsed().as_millis().ge(&submit_timeout) {
+                    println!("Timeout reached while submitting hash for validation.");
+                    break;
+                }
                 println!("\n\nSubmitting hash for validation...");
                 // Double check we're submitting for the right challenge
                 let proof_ = get_proof(&self.rpc_client, signer.pubkey()).await;
@@ -226,6 +241,7 @@ impl Miner {
                         // TODO
                     }
                 }
+                current_submit_retry += 1;
             }
         }
     }

@@ -7,10 +7,11 @@ use ore::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{pubkey::Pubkey, sysvar};
-use solana_sdk::clock::Clock;
+use solana_sdk::{clock::Clock, commitment_config::CommitmentConfig};
 use spl_associated_token_account::get_associated_token_address;
 
-pub async fn get_treasury(client: &RpcClient) -> Treasury {
+pub async fn get_treasury(cluster: String) -> Treasury {
+    let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::processed());
     let data = client
         .get_account_data(&TREASURY_ADDRESS)
         .await
@@ -18,7 +19,8 @@ pub async fn get_treasury(client: &RpcClient) -> Treasury {
     *Treasury::try_from_bytes(&data).expect("Failed to parse treasury account")
 }
 
-pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Proof {
+pub async fn get_proof(cluster: String, authority: Pubkey) -> Proof {
+    let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::processed());
     let proof_address = proof_pubkey(authority);
     let data = client
         .get_account_data(&proof_address)
@@ -27,7 +29,8 @@ pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Proof {
     *Proof::try_from_bytes(&data).expect("Failed to parse miner account")
 }
 
-pub async fn get_clock_account(client: &RpcClient) -> Clock {
+pub async fn get_clock_account(cluster: String) -> Clock {
+    let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::processed());
     let data = client
         .get_account_data(&sysvar::clock::ID)
         .await

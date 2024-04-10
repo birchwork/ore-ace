@@ -1,3 +1,6 @@
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::commitment_config::CommitmentConfig;
+
 use crate::{
     utils::{get_treasury, treasury_tokens_pubkey},
     Miner,
@@ -5,10 +8,11 @@ use crate::{
 
 impl Miner {
     pub async fn treasury(&self) {
-        let client = self.rpc_client.clone();
+        let client =
+            RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::processed());
         if let Ok(Some(treasury_tokens)) = client.get_token_account(&treasury_tokens_pubkey()).await
         {
-            let treasury = get_treasury(&self.rpc_client).await;
+            let treasury = get_treasury(self.cluster.clone()).await;
             let balance = treasury_tokens.token_amount.ui_amount_string;
             println!("{:} ORE", balance);
             println!("Admin: {}", treasury.admin);

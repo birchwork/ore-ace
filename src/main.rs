@@ -18,16 +18,15 @@ mod utils;
 use std::sync::Arc;
 
 use clap::{command, Parser, Subcommand};
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_sdk::signature::Keypair;
 
 struct Miner {
     pub keypair_filepath: Option<String>,
     pub priority_fee: u64,
-    pub rpc_client: Arc<RpcClient>,
-    pub query_rpc_client: Arc<RpcClient>,
+    pub cluster: String,
     pub jito_fee: u64,
     pub jito_enable: bool,
+    pub jito_client: String,
 }
 
 #[derive(Parser, Debug)]
@@ -48,7 +47,6 @@ struct Args {
         default_value = "false"
     )]
     jito_enable: bool,
-
     #[arg(
         long,
         value_name = "NETWORK_URL",
@@ -56,14 +54,13 @@ struct Args {
         global = true
     )]
     rpc: Option<String>,
-
     #[arg(
         long,
-        value_name = "QUERY_NETWORK_URL",
-        help = "Network address of your query RPC provider",
+        value_name = "JITO_URL",
+        help = "Network address of your JITO RPC provider",
         global = true
     )]
-    query_rpc: Option<String>,
+    jito_client: Option<String>,
 
     #[clap(
         global = true,
@@ -161,15 +158,6 @@ struct MineArgs {
         default_value = "1"
     )]
     threads: u64,
-
-    #[arg(
-        long,
-        short,
-        value_name = "AUTO_CLAIM",
-        help = "To automatically claim rewards every 10 mines. Defaults to false.",
-        action
-    )]
-    auto_claim: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -223,15 +211,15 @@ async fn main() {
     };
 
     // Initialize miner.
-    let query_cluster = args.query_rpc.unwrap_or("https://api.mainnet-beta.solana.com/".to_string());
-    let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
+    let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url.clone());
+    let jito_client = args
+        .jito_client
+        .unwrap_or("https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string());
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
-    let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::finalized());
-    let query_client = RpcClient::new_with_commitment(query_cluster, CommitmentConfig::finalized());
 
     let miner = Arc::new(Miner::new(
-        Arc::new(rpc_client),
-        Arc::new(query_client),
+        cluster.clone(),
+        jito_client.clone(),
         args.priority_fee,
         Some(default_keypair),
         args.jito_fee,
@@ -253,10 +241,10 @@ async fn main() {
             miner.treasury().await;
         }
         Commands::Mine(args) => {
-            miner.mine(args.threads, args.auto_claim).await;
+            miner.mine(args.threads).await;
         }
         Commands::Claim(args) => {
-            miner.claim(args.beneficiary, args.amount).await;
+            miner.claim(cluster, args.beneficiary, args.amount).await;
         }
         #[cfg(feature = "admin")]
         Commands::Initialize(_) => {
@@ -275,18 +263,18 @@ async fn main() {
 
 impl Miner {
     pub fn new(
-        rpc_client: Arc<RpcClient>,
-        query_rpc_client: Arc<RpcClient>,
+        cluster: String,
+        jito_client: String,
         priority_fee: u64,
         keypair_filepath: Option<String>,
         jito_fee: u64,
         jito_enable: bool,
     ) -> Self {
         Self {
-            rpc_client,
-            query_rpc_client,
             keypair_filepath,
             priority_fee,
+            cluster,
+            jito_client,
             jito_fee,
             jito_enable,
         }

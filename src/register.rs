@@ -1,4 +1,5 @@
-use solana_sdk::signature::Signer;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Signer};
 
 use crate::{utils::proof_pubkey, Miner};
 
@@ -7,18 +8,16 @@ impl Miner {
         // Return early if miner is already registered
         let signer = self.signer();
         let proof_address = proof_pubkey(signer.pubkey());
-        let client = self.rpc_client.clone();
+        let client = RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::processed());
         if client.get_account(&proof_address).await.is_ok() {
             return;
         }
 
         // Sign and send transaction.
-        println!("Generating challenge...");
-        'send: loop {
-            let ix = ore::instruction::register(signer.pubkey());
-            if self.send_and_confirm(&[ix], true, false, 0).await.is_ok() {
-                break 'send;
-            }
-        }
+        println!("{} Generating challenge... {}", signer.pubkey(), proof_address);
+        let ix = ore::instruction::register(signer.pubkey());
+        self.send_and_confirm(&[ix], true, false)
+            .await
+            .expect("Transaction failed");
     }
 }

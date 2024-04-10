@@ -1,35 +1,25 @@
 use std::{
     io::{stdout, Write},
-    str::FromStr,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
-use ore::{
-    self,
-    state::{Bus, Proof},
-    utils::AccountDeserialize,
-    BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION,
-};
+use futures::task::waker;
+use ore::{self, state::Bus, BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION};
 use rand::Rng;
-use solana_program::{
-    keccak::HASH_BYTES,
-    program_memory::sol_memcmp,
-    pubkey::{self, Pubkey},
-};
+use solana_program::{keccak::HASH_BYTES, program_memory::sol_memcmp, pubkey::Pubkey};
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
     keccak::{hashv, Hash as KeccakHash},
     signature::Signer,
-    system_instruction::transfer,
 };
 
 use crate::{
     cu_limits::{CU_LIMIT_MINE, CU_LIMIT_RESET},
-    utils::{get_clock_account, get_proof, get_treasury, proof_pubkey},
+    utils::{get_clock_account, get_proof, get_treasury},
     Miner,
 };
-
 use serde::{Deserialize, Serialize};
+
 #[derive(Serialize, Deserialize, Debug)]
 struct GasTrackerResponse {
     sol: SolData,
@@ -53,84 +43,41 @@ struct Percentiles {
     p50: u64,
     #[serde(rename = "75")]
     p75: u64,
-}
-// Odds of being selected to submit a reset tx
+} // Odds of being selected to submit a reset tx
 const RESET_ODDS: u64 = 20;
-const CLAIM_PERIOD: u16 = 100;
 
 impl Miner {
-    pub async fn mine(&self, threads: u64, auto_claim: bool) {
+    pub async fn mine(&self, threads: u64) {
         // Register, if needed.
         let signer = self.signer();
         self.register().await;
-        let mut count = 0_u16;
+        let mut stdout = stdout();
         let mut rng = rand::thread_rng();
-
-        // check submit time
-        let submit_retries: u128 = 3;
-        let submit_timeout: u128 = 60000;
-
-        let jito_addresses = vec![
-            "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
-            "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
-            "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
-            "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
-            "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
-            "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
-            "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
-            "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
-        ];
-
+        let mut fuckmesilly: u64 = 0;
         // Start mining loop
         loop {
             // Fetch account state
             let balance = self.get_ore_display_balance().await;
-            println!("Balance:{}", balance);
             let treasury = get_treasury(&self.rpc_client).await;
             let proof = get_proof(&self.rpc_client, signer.pubkey()).await;
-
-            if auto_claim
-                && count % CLAIM_PERIOD == 0
-                && balance.parse::<f64>().unwrap_or(0.0) > 0.0
-            {
-                println!("Auto-claiming rewards...");
-                let pubkey = signer.pubkey();
-                let client = self.rpc_client.clone();
-                let amount = match client.get_account(&proof_pubkey(pubkey)).await {
-                    Ok(proof_account) => {
-                        let proof = Proof::try_from_bytes(&proof_account.data).unwrap();
-                        proof.claimable_rewards
-                    }
-                    Err(err) => {
-                        println!("Error looking up claimable rewards: {:?}", err);
-                        return;
-                    }
-                };
-
-                self.claim(None, Some(amount as f64)).await;
-            }
-
-            count += 1;
+            let rewards =
+                (proof.claimable_rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+            let reward_rate =
+                (treasury.reward_rate as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+            stdout.write_all(b"\x1b[2J\x1b[3J\x1b[H").ok();
+            println!("Balance: {} ORE", balance);
+            println!("Claimable: {} ORE", rewards);
+            println!("Reward rate: {} ORE", reward_rate);
 
             // Escape sequence that clears the screen and the scrollback buffer
+            println!("\nMining for a valid hash...");
             let (next_hash, nonce) =
                 self.find_next_hash_par(proof.hash.into(), treasury.difficulty.into(), threads);
 
-            let mut current_submit_retry: u128 = 0;
-            let start_time: std::time::Instant = std::time::Instant::now();
             // Submit mine tx.
             // Use busses randomly so on each epoch, transactions don't pile on the same busses
+            println!("\n\nSubmitting hash for validation...");
             'submit: loop {
-                if current_submit_retry.ge(&submit_retries) {
-                    println!("Failed to submit hash for validation.");
-                    break;
-                }
-
-                if start_time.elapsed().as_millis().ge(&submit_timeout) {
-                    println!("Timeout reached while submitting hash for validation.");
-                    break;
-                }
-                println!("\n\nSubmitting hash for validation...");
                 // Double check we're submitting for the right challenge
                 let proof_ = get_proof(&self.rpc_client, signer.pubkey()).await;
                 if !self.validate_hash(
@@ -151,8 +98,10 @@ impl Miner {
                 if clock.unix_timestamp.ge(&threshold) {
                     // There are a lot of miners right now, so randomly select into submitting tx
                     if rng.gen_range(0..RESET_ODDS).eq(&0) {
+                        println!("Sending epoch reset transaction...");
                         let cu_limit_ix =
                             ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_RESET);
+                        println!("[!]\t\tThe old Priority Fee is {}", self.priority_fee);
                         let url = "https://quicknode.com/_gas-tracker?slug=solana";
                         let client = reqwest::Client::new();
                         let resp = match client
@@ -167,11 +116,14 @@ impl Miner {
                         let p25 = resp.as_ref().unwrap().sol.per_transaction.percentiles.p25;
                         let p50 = resp.as_ref().unwrap().sol.per_transaction.percentiles.p50;
                         let p75 = resp.unwrap().sol.per_transaction.percentiles.p75;
+
                         // Perform the calculation as peryour request
-                        let fuckmesilly =
+                        fuckmesilly =
                             rand::thread_rng().gen_range(((p50 / 2) + p50)..(p25 / 5 + p75));
+
+                        println!("Calculated Value: {}", fuckmesilly);
                         let cu_price_ix =
-                            ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+                            ComputeBudgetInstruction::set_compute_unit_price(fuckmesilly);
                         let reset_ix = ore::instruction::reset(signer.pubkey());
                         self.send_and_confirm(
                             &[cu_limit_ix, cu_price_ix, reset_ix],
@@ -189,6 +141,7 @@ impl Miner {
                 let bus_rewards = (bus.rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
                 println!("Sending on bus {} ({} ORE)", bus.id, bus_rewards);
                 let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_MINE);
+                println!("[!]\t\tThe old Priority Fee is {}", fuckmesilly);
                 let url = "https://quicknode.com/_gas-tracker?slug=solana";
                 let client = reqwest::Client::new();
                 let resp = match client
@@ -201,38 +154,30 @@ impl Miner {
                     Err(_) => None,
                 };
                 let p25 = resp.as_ref().unwrap().sol.per_transaction.percentiles.p25;
+
                 let p50 = resp.as_ref().unwrap().sol.per_transaction.percentiles.p50;
                 let p75 = resp.unwrap().sol.per_transaction.percentiles.p75;
+                println!("[i] p50: {} \t p75: {}", p50, p75);
                 // Perform the calculation as peryour request
-                let fuckmesilly = rand::thread_rng().gen_range(((p50 / 2) + p50)..(p25 / 5 + p75));
-                let cu_price_ix =
-                    ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-
-                // jito Tips
-                let mut rng = rand::thread_rng();
-                let random_index = rng.gen_range(0..jito_addresses.len());
-                let selected_address = jito_addresses[random_index];
-
-                let jito_tips = transfer(
-                    &signer.pubkey(),
-                    &pubkey::Pubkey::from_str(selected_address).unwrap(),
-                    self.jito_fee,
-                );
-
+                fuckmesilly = rand::thread_rng().gen_range(((p50 / 2) + p50)..(p25 / 5 + p75));
+                println!("[+]\t\t The new Priority Fee is!!{}", fuckmesilly);
+                println!("Calculated Value: {}", fuckmesilly);
+                let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(fuckmesilly);
                 let ix_mine = ore::instruction::mine(
                     signer.pubkey(),
                     BUS_ADDRESSES[bus.id as usize],
                     next_hash.into(),
                     nonce,
                 );
-
-                let mut ixs: Vec<_> = vec![cu_limit_ix, cu_price_ix, ix_mine];
-
-                if self.jito_enable {
-                    ixs.insert(0, jito_tips);
-                }
-
-                match self.send_and_confirm(&ixs, false, false, fuckmesilly).await {
+                match self
+                    .send_and_confirm(
+                        &[cu_limit_ix, cu_price_ix, ix_mine],
+                        false,
+                        false,
+                        fuckmesilly,
+                    )
+                    .await
+                {
                     Ok(sig) => {
                         println!("Success: {}", sig);
                         break;
@@ -241,7 +186,6 @@ impl Miner {
                         // TODO
                     }
                 }
-                current_submit_retry += 1;
             }
         }
     }
@@ -320,6 +264,9 @@ impl Miner {
                                 }
                             }
                             if next_hash.le(&difficulty) {
+                                stdout
+                                    .write_all(format!("\r{}", next_hash.to_string()).as_bytes())
+                                    .ok();
                                 found_solution.store(true, std::sync::atomic::Ordering::Relaxed);
                                 let mut w_solution = solution.lock().expect("failed to lock mutex");
                                 *w_solution = (next_hash, nonce);

@@ -15,40 +15,49 @@ mod update_admin;
 mod update_difficulty;
 mod utils;
 
+use std::process;
 use std::sync::Arc;
 
 use clap::{command, Parser, Subcommand};
+use futures::task::waker;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_sdk::{
+    commitment_config::CommitmentConfig,
+    signature::{read_keypair_file, Keypair},
+};
 
 struct Miner {
     pub keypair_filepath: Option<String>,
     pub priority_fee: u64,
     pub rpc_client: Arc<RpcClient>,
-    pub query_rpc_client: Arc<RpcClient>,
-    pub jito_fee: u64,
-    pub jito_enable: bool,
+}
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct GasTrackerResponse {
+    sol: SolData,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct SolData {
+    per_transaction: PerTransaction,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PerTransaction {
+    percentiles: Percentiles,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Percentiles {
+    #[serde(rename = "50")]
+    p50: u64,
+    #[serde(rename = "75")]
+    p75: u64,
+}
 #[derive(Parser, Debug)]
 #[command(about, version)]
 struct Args {
-    #[arg(
-        long,
-        value_name = "JitoTips Fee",
-        help = "10000=0.00001SOL",
-        default_value = "10000"
-    )]
-    jito_fee: u64,
-
-    #[arg(
-        long,
-        value_name = "enable JitoTips",
-        help = "enable JitoTips?",
-        default_value = "false"
-    )]
-    jito_enable: bool,
-
     #[arg(
         long,
         value_name = "NETWORK_URL",
@@ -56,14 +65,6 @@ struct Args {
         global = true
     )]
     rpc: Option<String>,
-
-    #[arg(
-        long,
-        value_name = "QUERY_NETWORK_URL",
-        help = "Network address of your query RPC provider",
-        global = true
-    )]
-    query_rpc: Option<String>,
 
     #[clap(
         global = true,
@@ -161,15 +162,6 @@ struct MineArgs {
         default_value = "1"
     )]
     threads: u64,
-
-    #[arg(
-        long,
-        short,
-        value_name = "AUTO_CLAIM",
-        help = "To automatically claim rewards every 10 mines. Defaults to false.",
-        action
-    )]
-    auto_claim: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -223,19 +215,14 @@ async fn main() {
     };
 
     // Initialize miner.
-    let query_cluster = args.query_rpc.unwrap_or("https://api.mainnet-beta.solana.com/".to_string());
     let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::finalized());
-    let query_client = RpcClient::new_with_commitment(query_cluster, CommitmentConfig::finalized());
 
     let miner = Arc::new(Miner::new(
         Arc::new(rpc_client),
-        Arc::new(query_client),
         args.priority_fee,
         Some(default_keypair),
-        args.jito_fee,
-        args.jito_enable,
     ));
 
     // Execute user command.
@@ -253,7 +240,7 @@ async fn main() {
             miner.treasury().await;
         }
         Commands::Mine(args) => {
-            miner.mine(args.threads, args.auto_claim).await;
+            miner.mine(args.threads).await;
         }
         Commands::Claim(args) => {
             miner.claim(args.beneficiary, args.amount).await;
@@ -276,19 +263,13 @@ async fn main() {
 impl Miner {
     pub fn new(
         rpc_client: Arc<RpcClient>,
-        query_rpc_client: Arc<RpcClient>,
         priority_fee: u64,
         keypair_filepath: Option<String>,
-        jito_fee: u64,
-        jito_enable: bool,
     ) -> Self {
         Self {
             rpc_client,
-            query_rpc_client,
             keypair_filepath,
             priority_fee,
-            jito_fee,
-            jito_enable,
         }
     }
 

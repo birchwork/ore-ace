@@ -19,7 +19,11 @@ async function main() {
         new PublicKey(config.beneficiary)
       );
 
-      await wallet.transfer();
+      const amount = await wallet.amount();
+
+      if (amount > 0) {
+        await wallet.transfer();
+      }
     }
     setTitle("Done.");
   });

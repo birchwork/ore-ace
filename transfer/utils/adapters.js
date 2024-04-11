@@ -127,6 +127,19 @@ class Adapter {
       setTimeout(() => console.log("Timeout executed"), 1500);
     });
   }
+
+  async amount() {
+    const sourceAccount = await getOrCreateAssociatedTokenAccount(
+      this.connection,
+      this.fromKeypair,
+      this.splAddress,
+      this.fromKeypair.publicKey
+    );
+
+    const transferAmountInDecimals = Number(sourceAccount.amount);
+
+    return transferAmountInDecimals;
+  }
 }
 
 module.exports = {

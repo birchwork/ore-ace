@@ -32,6 +32,9 @@ impl Miner {
             }
         };
         let amountf = (amount as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+        if amountf == 0.0 {
+            return;
+        }
         let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM);
         let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
         let ix = ore::instruction::claim(pubkey, beneficiary, amount);

@@ -13,12 +13,7 @@ const path = require("path");
  */
 function generateYAML(filename, baseRPC, name, options = {}) {
   // Destructuring the options with default values
-  const {
-    jitoFee,
-    jitoEnable = false,
-    priorityFee = "0",
-    threads = "1",
-  } = options;
+  const { estimateFees = true, threads = "1" } = options;
 
   fs.readFile(filename, "utf8", (err, data) => {
     if (err) {
@@ -37,25 +32,25 @@ function generateYAML(filename, baseRPC, name, options = {}) {
     // Iterating over each key to generate service entries
     keys.forEach((key, index) => {
       const serviceName = `mine-${name}-${String(index + 1).padStart(3, "0")}`;
-      const containerName = `mine-${name}-${String(index + 1).padStart(3, "0")}`;
+      const containerName = `mine-${name}-${String(index + 1).padStart(
+        3,
+        "0"
+      )}`;
 
       // Constructing the YAML content dynamically based on provided parameters
       yamlContent += `  ${serviceName}:\n`;
       yamlContent += `    container_name: ${containerName}\n`;
-      yamlContent += `    image: ghcr.io/birchwork/ore-ace:latest\n`;
+      yamlContent += `    image: ghcr.io/birchwork/ore-ace:priority\n`;
       yamlContent += `    command:\n`;
-      if (jitoEnable) {
-        yamlContent += `      - "--jito-enable"\n`;
-        if (jitoFee) {
-          yamlContent += `      - "--jito-fee"\n      - "${jitoFee}"\n`;
-        }
+      if (estimateFees) {
+        yamlContent += `      - "--estimate-fees"\n`;
       }
       yamlContent += `      - "--rpc"\n      - "${baseRPC}"\n`;
       yamlContent += `      - "--keypair"\n      - "${key}"\n`;
+      yamlContent += `      - "mine"\n`;
       if (threads !== "1") {
         yamlContent += `      - "--threads"\n      - "${threads}"\n`;
       }
-      yamlContent += `      - "mine"\n`;
       yamlContent += "    restart: always\n\n";
     });
 
@@ -75,7 +70,6 @@ const filename = "./file.txt"; // Replace with the path to your private key file
 const baseRPC = "https://example-rpc-url.com"; // Replace with your base RPC URL
 const name = "group-1"; // Group name
 generateYAML(filename, baseRPC, name, {
-  jitoEnable: true,
-  jitoFee: "10000",
-  threads: "1",
+  estimateFees: true,
+  threads: "4",
 });

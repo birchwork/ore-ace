@@ -2,6 +2,7 @@ mod balance;
 mod busses;
 mod claim;
 mod cu_limits;
+mod estimate_fees;
 #[cfg(feature = "admin")]
 mod initialize;
 mod mine;
@@ -18,15 +19,16 @@ mod utils;
 use std::sync::Arc;
 
 use clap::{command, Parser, Subcommand};
-use solana_sdk::signature::Keypair;
+use estimate_fees::PriorityLevel;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
 struct Miner {
     pub keypair_filepath: Option<String>,
     pub priority_fee: u64,
-    pub cluster: String,
-    pub jito_fee: u64,
-    pub jito_enable: bool,
-    pub jito_client: String,
+    pub estimate_fees: bool,
+    pub priority_level: PriorityLevel,
+    pub rpc_client: Arc<RpcClient>,
 }
 
 #[derive(Parser, Debug)]
@@ -34,33 +36,11 @@ struct Miner {
 struct Args {
     #[arg(
         long,
-        value_name = "JitoTips Fee",
-        help = "10000=0.00001SOL",
-        default_value = "10000"
-    )]
-    jito_fee: u64,
-
-    #[arg(
-        long,
-        value_name = "enable JitoTips",
-        help = "enable JitoTips?",
-        default_value = "false"
-    )]
-    jito_enable: bool,
-    #[arg(
-        long,
         value_name = "NETWORK_URL",
         help = "Network address of your RPC provider",
         global = true
     )]
     rpc: Option<String>,
-    #[arg(
-        long,
-        value_name = "JITO_URL",
-        help = "Network address of your JITO RPC provider",
-        global = true
-    )]
-    jito_client: Option<String>,
 
     #[clap(
         global = true,
@@ -87,6 +67,23 @@ struct Args {
         global = true
     )]
     priority_fee: u64,
+
+    #[arg(
+        long,
+        help = "Estimate priority fees for transactions",
+        default_value = "false",
+        global = true
+    )]
+    estimate_fees: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        help = "The desired level for priority fee estimation",
+        default_value = "default",
+        global = true
+    )]
+    priority_level: PriorityLevel,
 
     #[command(subcommand)]
     command: Commands,
@@ -211,19 +208,16 @@ async fn main() {
     };
 
     // Initialize miner.
-    let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url.clone());
-    let jito_client = args
-        .jito_client
-        .unwrap_or("https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string());
+    let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
+    let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
 
     let miner = Arc::new(Miner::new(
-        cluster.clone(),
-        jito_client.clone(),
+        Arc::new(rpc_client),
         args.priority_fee,
+        args.estimate_fees,
+        args.priority_level,
         Some(default_keypair),
-        args.jito_fee,
-        args.jito_enable,
     ));
 
     // Execute user command.
@@ -244,7 +238,7 @@ async fn main() {
             miner.mine(args.threads).await;
         }
         Commands::Claim(args) => {
-            miner.claim(cluster, args.beneficiary, args.amount).await;
+            miner.claim(args.beneficiary, args.amount).await;
         }
         #[cfg(feature = "admin")]
         Commands::Initialize(_) => {
@@ -263,20 +257,18 @@ async fn main() {
 
 impl Miner {
     pub fn new(
-        cluster: String,
-        jito_client: String,
+        rpc_client: Arc<RpcClient>,
         priority_fee: u64,
+        estimate_fees: bool,
+        priority_level: PriorityLevel,
         keypair_filepath: Option<String>,
-        jito_fee: u64,
-        jito_enable: bool,
     ) -> Self {
         Self {
+            rpc_client,
             keypair_filepath,
             priority_fee,
-            cluster,
-            jito_client,
-            jito_fee,
-            jito_enable,
+            estimate_fees,
+            priority_level,
         }
     }
 

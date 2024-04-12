@@ -1,20 +1,16 @@
 use std::str::FromStr;
 
 use ore::{self, state::Proof, utils::AccountDeserialize};
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::{
-    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
-    signature::Signer,
-};
+use solana_sdk::{compute_budget::ComputeBudgetInstruction, signature::Signer};
 
 use crate::{cu_limits::CU_LIMIT_CLAIM, utils::proof_pubkey, Miner};
 
 impl Miner {
-    pub async fn claim(&self, cluster: String, beneficiary: Option<String>, amount: Option<f64>) {
+    pub async fn claim(&self, beneficiary: Option<String>, amount: Option<f64>) {
         let signer = self.signer();
         let pubkey = signer.pubkey();
-        let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::processed());
+        let client = self.rpc_client.clone();
         let beneficiary = match beneficiary {
             Some(beneficiary) => {
                 Pubkey::from_str(&beneficiary).expect("Failed to parse beneficiary address")
@@ -35,34 +31,21 @@ impl Miner {
                 }
             }
         };
-
         let amountf = (amount as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
-
-        if amountf < 0.0001 {
-            return;
-        }
-
-        'reclaim: loop {
-            let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM);
-            let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-            let ix = ore::instruction::claim(pubkey, beneficiary, amount);
-            println!("Submitting claim transaction...");
-            match self
-                .send_and_confirm(
-                    &[cu_limit_ix.clone(), cu_price_ix.clone(), ix.clone()],
-                    false,
-                    false,
-                )
-                .await
-            {
-                Ok(sig) => {
-                    println!("Claimed {:} ORE to account {:}", amountf, beneficiary);
-                    println!("{:?}", sig);
-                    break 'reclaim;
-                }
-                Err(err) => {
-                    println!("Error: {:?}", err);
-                }
+        let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM);
+        let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+        let ix = ore::instruction::claim(pubkey, beneficiary, amount);
+        println!("Submitting claim transaction...");
+        match self
+            .send_and_confirm(&[cu_limit_ix, cu_price_ix, ix], false, false)
+            .await
+        {
+            Ok(sig) => {
+                println!("Claimed {:} ORE to account {:}", amountf, beneficiary);
+                println!("{:?}", sig);
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
             }
         }
     }
@@ -70,8 +53,7 @@ impl Miner {
     async fn initialize_ata(&self) -> Pubkey {
         // Initialize client.
         let signer = self.signer();
-        let client =
-            RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::processed());
+        let client = self.rpc_client.clone();
 
         // Build instructions.
         let token_account_pubkey = spl_associated_token_account::get_associated_token_address(

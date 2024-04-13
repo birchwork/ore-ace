@@ -37,7 +37,7 @@ function generateYAML(filename, baseRPC, name) {
       // Constructing the YAML content dynamically based on provided parameters
       yamlContent += `  ${serviceName}:\n`;
       yamlContent += `    container_name: ${containerName}\n`;
-      yamlContent += `    image: ghcr.io/birchwork/ore-ace:latest\n`;
+      yamlContent += `    image: ghcr.io/birchwork/ore-ace:v0.6\n`;
       yamlContent += `    command:\n`;
       yamlContent += `      - "--rpc"\n      - "${baseRPC}"\n`;
       yamlContent += `      - "--keypair"\n      - "${key}"\n`;

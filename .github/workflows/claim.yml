@@ -2,8 +2,6 @@ name: ORE-ACE-CLAIM
 
 on:
   push:
-    tags:
-      - "v*"
     branches: ["test"]
   pull_request:
     branches: ["test"]

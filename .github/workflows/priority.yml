@@ -2,8 +2,6 @@ name: ORE-ACE-PRIORITY
 
 on:
   push:
-    tags:
-      - "v*"
     branches: ["priority"]
   pull_request:
     branches: ["priority"]

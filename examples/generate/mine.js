@@ -13,7 +13,7 @@ const path = require("path");
  */
 function generateYAML(filename, baseRPC, name, options = {}) {
   // Destructuring the options with default values
-  const { estimateFees = true, threads = "1" } = options;
+  const { threads } = options;
 
   fs.readFile(filename, "utf8", (err, data) => {
     if (err) {
@@ -40,11 +40,8 @@ function generateYAML(filename, baseRPC, name, options = {}) {
       // Constructing the YAML content dynamically based on provided parameters
       yamlContent += `  ${serviceName}:\n`;
       yamlContent += `    container_name: ${containerName}\n`;
-      yamlContent += `    image: ghcr.io/birchwork/ore-ace:priority\n`;
+      yamlContent += `    image: ghcr.io/birchwork/ore-ace:latest\n`;
       yamlContent += `    command:\n`;
-      if (estimateFees) {
-        yamlContent += `      - "--estimate-fees"\n`;
-      }
       yamlContent += `      - "--rpc"\n      - "${baseRPC}"\n`;
       yamlContent += `      - "--keypair"\n      - "${key}"\n`;
       yamlContent += `      - "mine"\n`;
@@ -70,6 +67,5 @@ const filename = "./file.txt"; // Replace with the path to your private key file
 const baseRPC = "https://example-rpc-url.com"; // Replace with your base RPC URL
 const name = "group-1"; // Group name
 generateYAML(filename, baseRPC, name, {
-  estimateFees: true,
   threads: "4",
 });

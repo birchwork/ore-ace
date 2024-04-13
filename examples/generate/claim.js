@@ -11,10 +11,7 @@ const path = require("path");
  *   - {string} [priorityFee="0"] - The priority fee per transaction.
  *   - {string} [threads="1"] - The number of threads for mining.
  */
-function generateYAML(filename, baseRPC, name, options = {}) {
-  // Destructuring the options with default values
-  const { estimateFees } = options;
-
+function generateYAML(filename, baseRPC, name) {
   fs.readFile(filename, "utf8", (err, data) => {
     if (err) {
       console.error("Error reading the file:", err);
@@ -31,8 +28,8 @@ function generateYAML(filename, baseRPC, name, options = {}) {
 
     // Iterating over each key to generate service entries
     keys.forEach((key, index) => {
-      const serviceName = `claim-${name}-${String(index + 1).padStart(3, "0")}`;
-      const containerName = `claim-${name}-${String(index + 1).padStart(
+      const serviceName = `mine-${name}-${String(index + 1).padStart(3, "0")}`;
+      const containerName = `mine-${name}-${String(index + 1).padStart(
         3,
         "0"
       )}`;
@@ -40,11 +37,8 @@ function generateYAML(filename, baseRPC, name, options = {}) {
       // Constructing the YAML content dynamically based on provided parameters
       yamlContent += `  ${serviceName}:\n`;
       yamlContent += `    container_name: ${containerName}\n`;
-      yamlContent += `    image: ghcr.io/birchwork/ore-ace:priority\n`;
+      yamlContent += `    image: ghcr.io/birchwork/ore-ace:latest\n`;
       yamlContent += `    command:\n`;
-      if (estimateFees) {
-        yamlContent += `      - "--estimate-fees"\n`;
-      }
       yamlContent += `      - "--rpc"\n      - "${baseRPC}"\n`;
       yamlContent += `      - "--keypair"\n      - "${key}"\n`;
       yamlContent += `      - "claim"\n`;
@@ -66,6 +60,4 @@ function generateYAML(filename, baseRPC, name, options = {}) {
 const filename = "./file.txt"; // Replace with the path to your private key file
 const baseRPC = "https://example-rpc-url.com"; // Replace with your base RPC URL
 const name = "group-1"; // Group name
-generateYAML(filename, baseRPC, name, {
-  estimateFees: true,
-});
+generateYAML(filename, baseRPC, name);

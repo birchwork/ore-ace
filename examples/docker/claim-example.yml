@@ -1,11 +1,10 @@
 version: "0.1"
 
 services:
-  claim-group-1-001:
-    container_name: claim-group-1-001
-    image: ghcr.io/birchwork/ore-ace:priority
+  mine-group-1-001:
+    container_name: mine-group-1-001
+    image: ghcr.io/birchwork/ore-ace:latest
     command:
-      - "--estimate-fees"
       - "--rpc"
       - "https://example-rpc-url.com"
       - "--keypair"

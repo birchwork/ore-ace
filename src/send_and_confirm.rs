@@ -1,7 +1,4 @@
-use std::{
-    io::{stdout, Write},
-    time::Duration,
-};
+use std::time::Duration;
 
 use solana_client::{
     client_error::{ClientError, ClientErrorKind, Result as ClientResult},
@@ -23,7 +20,7 @@ const SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 50;
 const CONFIRM_RETRIES: usize = 1;
 
-const CONFIRM_DELAY: u64 = 0;
+const CONFIRM_DELAY: u64 = 1000;
 const GATEWAY_DELAY: u64 = 1000;
 
 impl Miner {
@@ -33,7 +30,6 @@ impl Miner {
         dynamic_cus: bool,
         skip_confirm: bool,
     ) -> ClientResult<Signature> {
-        let mut stdout = stdout();
         let signer = self.signer();
         let client = self.rpc_client.clone();
 
@@ -79,8 +75,7 @@ impl Miner {
                 .await;
             match sim_res {
                 Ok(sim_res) => {
-                    if let Some(err) = sim_res.value.err {
-                        println!("Simulaton error: {:?}", err);
+                    if let Some(_err) = sim_res.value.err {
                         sim_attempts += 1;
                     } else if let Some(units_consumed) = sim_res.value.units_consumed {
                         if dynamic_cus {
@@ -98,8 +93,7 @@ impl Miner {
                         break 'simulate;
                     }
                 }
-                Err(err) => {
-                    println!("Simulaton error: {:?}", err);
+                Err(_err) => {
                     sim_attempts += 1;
                 }
             }
@@ -126,7 +120,6 @@ impl Miner {
         loop {
             match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
-                    println!("{:?}", sig);
                     // sigs.push(sig);
 
                     // Confirm tx
@@ -168,7 +161,6 @@ impl Miner {
                             }
                         }
                     }
-                    println!("Transaction did not land");
                 }
 
                 // Handle submit errors
@@ -178,7 +170,6 @@ impl Miner {
             }
 
             // Retry
-            stdout.flush().ok();
             std::thread::sleep(Duration::from_millis(GATEWAY_DELAY));
             attempts += 1;
             if attempts > GATEWAY_RETRIES {

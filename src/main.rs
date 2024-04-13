@@ -170,7 +170,7 @@ struct ClaimArgs {
     amount: Option<f64>,
 
     #[arg(
-        // long,
+        long,
         value_name = "TOKEN_ACCOUNT_ADDRESS",
         help = "Token account to receive mining rewards."
     )]

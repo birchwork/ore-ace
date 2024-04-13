@@ -1,7 +1,4 @@
-use std::{
-    io::{stdout, Write},
-    sync::{atomic::AtomicBool, Arc, Mutex},
-};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use ore::{self, state::Bus, BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION};
 use rand::Rng;
@@ -26,7 +23,7 @@ impl Miner {
         // Register, if needed.
         let signer = self.signer();
         self.register().await;
-        let mut stdout = stdout();
+
         let mut rng = rand::thread_rng();
 
         // Start mining loop
@@ -39,7 +36,7 @@ impl Miner {
                 (proof.claimable_rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
             let reward_rate =
                 (treasury.reward_rate as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
-            stdout.write_all(b"\x1b[2J\x1b[3J\x1b[H").ok();
+
             println!("Balance: {} ORE", balance);
             println!("Claimable: {} ORE", rewards);
             println!("Reward rate: {} ORE", reward_rate);
@@ -51,7 +48,7 @@ impl Miner {
 
             // Submit mine tx.
             // Use busses randomly so on each epoch, transactions don't pile on the same busses
-            println!("\n\nSubmitting hash for validation...");
+            println!("Submitting hash for validation...");
             'submit: loop {
                 // Double check we're submitting for the right challenge
                 let proof_ = get_proof(&self.rpc_client, signer.pubkey()).await;
@@ -85,7 +82,6 @@ impl Miner {
                                         &signer.pubkey(),
                                     )
                                     .await;
-                                println!("Priority fee: {}", priority_fee);
                                 priority_fee
                             } else {
                                 self.priority_fee
@@ -99,8 +95,7 @@ impl Miner {
 
                 // Submit request.
                 let bus = self.find_bus_id(treasury.reward_rate).await;
-                let bus_rewards = (bus.rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
-                println!("Sending on bus {} ({} ORE)", bus.id, bus_rewards);
+
                 let ix_mine = ore::instruction::mine(
                     signer.pubkey(),
                     BUS_ADDRESSES[bus.id as usize],
@@ -113,7 +108,6 @@ impl Miner {
                         let priority_fee = self
                             .get_priority_fee_estimate(&[ix_mine.clone()], &signer.pubkey())
                             .await;
-                        println!("Priority fee: {}", priority_fee);
                         priority_fee
                     } else {
                         self.priority_fee
@@ -184,7 +178,7 @@ impl Miner {
                 std::thread::spawn({
                     let found_solution = found_solution.clone();
                     let solution = solution.clone();
-                    let mut stdout = stdout();
+
                     move || {
                         let n = u64::MAX.saturating_div(threads).saturating_mul(i);
                         let mut next_hash: KeccakHash;
@@ -199,18 +193,8 @@ impl Miner {
                                 if found_solution.load(std::sync::atomic::Ordering::Relaxed) {
                                     return;
                                 }
-                                if n == 0 {
-                                    stdout
-                                        .write_all(
-                                            format!("\r{}", next_hash.to_string()).as_bytes(),
-                                        )
-                                        .ok();
-                                }
                             }
                             if next_hash.le(&difficulty) {
-                                stdout
-                                    .write_all(format!("\r{}", next_hash.to_string()).as_bytes())
-                                    .ok();
                                 found_solution.store(true, std::sync::atomic::Ordering::Relaxed);
                                 let mut w_solution = solution.lock().expect("failed to lock mutex");
                                 *w_solution = (next_hash, nonce);

@@ -34,12 +34,9 @@ impl Miner {
             let proof = get_proof(&self.rpc_client, signer.pubkey()).await;
             let rewards =
                 (proof.claimable_rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
-            let reward_rate =
-                (treasury.reward_rate as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
 
             println!("Balance: {} ORE", balance);
             println!("Claimable: {} ORE", rewards);
-            println!("Reward rate: {} ORE", reward_rate);
 
             // Escape sequence that clears the screen and the scrollback buffer
             println!("\nMining for a valid hash...");

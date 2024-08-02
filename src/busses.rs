@@ -1,5 +1,8 @@
-use ore::{state::Bus, utils::AccountDeserialize, BUS_ADDRESSES, TOKEN_DECIMALS};
-use solana_client::client_error::Result;
+use ore_api::{
+    consts::{BUS_ADDRESSES, TOKEN_DECIMALS},
+    state::Bus,
+};
+use ore_utils::AccountDeserialize;
 
 use crate::Miner;
 
@@ -16,11 +19,5 @@ impl Miner {
                 Err(_) => {}
             }
         }
-    }
-
-    pub async fn get_bus(&self, id: usize) -> Result<Bus> {
-        let client = self.rpc_client.clone();
-        let data = client.get_account_data(&BUS_ADDRESSES[id]).await?;
-        Ok(*Bus::try_from_bytes(&data).unwrap())
     }
 }

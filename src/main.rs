@@ -1,34 +1,74 @@
+mod args;
 mod balance;
+mod benchmark;
 mod busses;
 mod claim;
+mod close;
+mod config;
+mod constant;
 mod cu_limits;
-mod estimate_fees;
 #[cfg(feature = "admin")]
 mod initialize;
+mod jito;
 mod mine;
-mod register;
+mod open;
 mod rewards;
 mod send_and_confirm;
-mod treasury;
-#[cfg(feature = "admin")]
-mod update_admin;
-#[cfg(feature = "admin")]
-mod update_difficulty;
+mod stake;
+mod upgrade;
 mod utils;
 
 use std::sync::Arc;
 
+use args::*;
 use clap::{command, Parser, Subcommand};
-use estimate_fees::PriorityLevel;
+use jito::{subscribe_jito_tips, JitoTips};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use tokio::sync::RwLock;
 
 struct Miner {
-    pub keypair_filepath: Option<String>,
+    pub private_key: Option<String>,
     pub priority_fee: u64,
-    pub estimate_fees: bool,
-    pub priority_level: PriorityLevel,
     pub rpc_client: Arc<RpcClient>,
+    tips: Arc<RwLock<JitoTips>>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    #[command(about = "Fetch an account balance")]
+    Balance(BalanceArgs),
+
+    #[command(about = "Benchmark your hashpower")]
+    Benchmark(BenchmarkArgs),
+
+    #[command(about = "Fetch the bus account balances")]
+    Busses(BussesArgs),
+
+    #[command(about = "Claim your mining rewards")]
+    Claim(ClaimArgs),
+
+    #[command(about = "Close your account to recover rent")]
+    Close(CloseArgs),
+
+    #[command(about = "Fetch the program config")]
+    Config(ConfigArgs),
+
+    #[command(about = "Start mining")]
+    Mine(MineArgs),
+
+    #[command(about = "Fetch the current reward rate for each difficulty level")]
+    Rewards(RewardsArgs),
+
+    #[command(about = "Stake to earn a rewards multiplier")]
+    Stake(StakeArgs),
+
+    #[command(about = "Upgrade your ORE tokens from v1 to v2")]
+    Upgrade(UpgradeArgs),
+
+    #[cfg(feature = "admin")]
+    #[command(about = "Initialize the program")]
+    Initialize(InitializeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -49,12 +89,12 @@ struct Args {
         id = "PATH",
         help = "Filepath to config file."
     )]
-    pub config_file: Option<String>,
+    config_file: Option<String>,
 
     #[arg(
         long,
-        value_name = "KEYPAIR_FILEPATH",
-        help = "Filepath to keypair to use",
+        value_name = "private_key",
+        help = "Private Key to keypair to use",
         global = true
     )]
     keypair: Option<String>,
@@ -68,128 +108,9 @@ struct Args {
     )]
     priority_fee: u64,
 
-    #[arg(
-        long,
-        help = "Estimate priority fees for transactions",
-        default_value = "false",
-        global = true
-    )]
-    estimate_fees: bool,
-
-    #[arg(
-        long,
-        value_enum,
-        help = "The desired level for priority fee estimation",
-        default_value = "default",
-        global = true
-    )]
-    priority_level: PriorityLevel,
-
     #[command(subcommand)]
     command: Commands,
 }
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    #[command(about = "Fetch the Ore balance of an account")]
-    Balance(BalanceArgs),
-
-    #[command(about = "Fetch the distributable rewards of the busses")]
-    Busses(BussesArgs),
-
-    #[command(about = "Mine Ore using local compute")]
-    Mine(MineArgs),
-
-    #[command(about = "Claim available mining rewards")]
-    Claim(ClaimArgs),
-
-    #[command(about = "Fetch your balance of unclaimed mining rewards")]
-    Rewards(RewardsArgs),
-
-    #[command(about = "Fetch the treasury account and balance")]
-    Treasury(TreasuryArgs),
-
-    #[cfg(feature = "admin")]
-    #[command(about = "Initialize the program")]
-    Initialize(InitializeArgs),
-
-    #[cfg(feature = "admin")]
-    #[command(about = "Update the program admin authority")]
-    UpdateAdmin(UpdateAdminArgs),
-
-    #[cfg(feature = "admin")]
-    #[command(about = "Update the mining difficulty")]
-    UpdateDifficulty(UpdateDifficultyArgs),
-}
-
-#[derive(Parser, Debug)]
-struct BalanceArgs {
-    #[arg(
-        // long,
-        value_name = "ADDRESS",
-        help = "The address of the account to fetch the balance of"
-    )]
-    pub address: Option<String>,
-}
-
-#[derive(Parser, Debug)]
-struct BussesArgs {}
-
-#[derive(Parser, Debug)]
-struct RewardsArgs {
-    #[arg(
-        // long,
-        value_name = "ADDRESS",
-        help = "The address of the account to fetch the rewards balance of"
-    )]
-    pub address: Option<String>,
-}
-
-#[derive(Parser, Debug)]
-struct MineArgs {
-    #[arg(
-        long,
-        short,
-        value_name = "THREAD_COUNT",
-        help = "The number of threads to dedicate to mining",
-        default_value = "1"
-    )]
-    threads: u64,
-}
-
-#[derive(Parser, Debug)]
-struct TreasuryArgs {}
-
-#[derive(Parser, Debug)]
-struct ClaimArgs {
-    #[arg(
-        // long,
-        value_name = "AMOUNT",
-        help = "The amount of rewards to claim. Defaults to max."
-    )]
-    amount: Option<f64>,
-
-    #[arg(
-        long,
-        value_name = "TOKEN_ACCOUNT_ADDRESS",
-        help = "Token account to receive mining rewards."
-    )]
-    beneficiary: Option<String>,
-}
-
-#[cfg(feature = "admin")]
-#[derive(Parser, Debug)]
-struct InitializeArgs {}
-
-#[cfg(feature = "admin")]
-#[derive(Parser, Debug)]
-struct UpdateAdminArgs {
-    new_admin: String,
-}
-
-#[cfg(feature = "admin")]
-#[derive(Parser, Debug)]
-struct UpdateDifficultyArgs {}
 
 #[tokio::main]
 async fn main() {
@@ -212,45 +133,52 @@ async fn main() {
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
 
+    // jito
+    let tips = Arc::new(RwLock::new(JitoTips::default()));
+    subscribe_jito_tips(tips.clone()).await;
+
     let miner = Arc::new(Miner::new(
         Arc::new(rpc_client),
         args.priority_fee,
-        args.estimate_fees,
-        args.priority_level,
         Some(default_keypair),
+        tips,
     ));
 
     // Execute user command.
     match args.command {
         Commands::Balance(args) => {
-            miner.balance(args.address).await;
+            miner.balance(args).await;
+        }
+        Commands::Benchmark(args) => {
+            miner.benchmark(args).await;
         }
         Commands::Busses(_) => {
             miner.busses().await;
         }
-        Commands::Rewards(args) => {
-            miner.rewards(args.address).await;
+        Commands::Claim(args) => {
+            miner.claim(args).await;
         }
-        Commands::Treasury(_) => {
-            miner.treasury().await;
+        Commands::Close(_) => {
+            miner.close().await;
+        }
+        Commands::Config(_) => {
+            miner.config().await;
         }
         Commands::Mine(args) => {
-            miner.mine(args.threads).await;
+            miner.mine(args).await;
         }
-        Commands::Claim(args) => {
-            miner.claim(args.beneficiary, args.amount).await;
+        Commands::Rewards(_) => {
+            miner.rewards().await;
+        }
+        Commands::Stake(args) => {
+            miner.stake(args).await;
+        }
+        Commands::Upgrade(args) => {
+            miner.upgrade(args).await;
         }
         #[cfg(feature = "admin")]
         Commands::Initialize(_) => {
             miner.initialize().await;
-        }
-        #[cfg(feature = "admin")]
-        Commands::UpdateAdmin(args) => {
-            miner.update_admin(args.new_admin).await;
-        }
-        #[cfg(feature = "admin")]
-        Commands::UpdateDifficulty(_) => {
-            miner.update_difficulty().await;
         }
     }
 }
@@ -259,23 +187,21 @@ impl Miner {
     pub fn new(
         rpc_client: Arc<RpcClient>,
         priority_fee: u64,
-        estimate_fees: bool,
-        priority_level: PriorityLevel,
-        keypair_filepath: Option<String>,
+        private_key: Option<String>,
+        tips: Arc<RwLock<JitoTips>>,
     ) -> Self {
         Self {
             rpc_client,
-            keypair_filepath,
+            private_key,
             priority_fee,
-            estimate_fees,
-            priority_level,
+            tips,
         }
     }
 
     pub fn signer(&self) -> Keypair {
-        match self.keypair_filepath.clone() {
+        match self.private_key.clone() {
             Some(key) => Keypair::from_base58_string(&key),
-            None => panic!("No keypair provided"),
+            None => panic!("No Private Key provided"),
         }
     }
 }

@@ -2,6 +2,8 @@
 
 A command line interface for the Ore program.
 
+> priority-fee is jito fee.
+
 ## **:black_nib:** Building
 
 To build the Ore CLI, you will need to have the Rust programming language installed. You can install Rust by following the instructions on the [Rust website](https://www.rust-lang.org/tools/install).

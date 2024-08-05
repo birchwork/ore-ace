@@ -30,14 +30,16 @@ impl Miner {
         // Check num threads
         self.check_num_cores(args.threads);
 
+        let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
+        println!(
+            "\nStake balance: {} ORE",
+            amount_u64_to_string(proof.balance)
+        );
         // Start mining loop
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
-            println!(
-                "\nStake balance: {} ORE",
-                amount_u64_to_string(proof.balance)
-            );
+
 
             // Calc cutoff time
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
@@ -65,7 +67,7 @@ impl Miner {
                 find_bus(),
                 solution,
             ));
-            self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
+            self.jito_send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();
         }
@@ -146,13 +148,6 @@ impl Miner {
                 }
             }
         }
-
-        // Update log
-        progress_bar.finish_with_message(format!(
-            "Best hash: {} (difficulty: {})",
-            bs58::encode(best_hash.h).into_string(),
-            best_difficulty
-        ));
 
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }

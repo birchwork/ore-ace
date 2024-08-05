@@ -11,9 +11,9 @@ const path = require("path");
  *   - {string} [priorityFee="0"] - The priority fee per transaction.
  *   - {string} [threads="1"] - The number of threads for mining.
  */
-function generateYAML(filename, baseRPC, name, options = {}) {
+function generateYAML(filename, baseRPC, name, options) {
   // Destructuring the options with default values
-  const { threads } = options;
+  const { threads,fee } = options;
 
   fs.readFile(filename, "utf8", (err, data) => {
     if (err) {
@@ -43,7 +43,8 @@ function generateYAML(filename, baseRPC, name, options = {}) {
       yamlContent += `    image: ghcr.io/birchwork/ore-ace:v0.6\n`;
       yamlContent += `    command:\n`;
       yamlContent += `      - "--rpc"\n      - "${baseRPC}"\n`;
-      yamlContent += `      - "--keypair"\n      - "${key}"\n`;
+      yamlContent += `      - "--private-key"\n      - "${key}"\n`;
+      yamlContent += `      - "--priority-fee"\n      - "${fee}"\n`;
       yamlContent += `      - "mine"\n`;
       if (threads !== "1") {
         yamlContent += `      - "--threads"\n      - "${threads}"\n`;
@@ -67,5 +68,6 @@ const filename = "./file.txt"; // Replace with the path to your private key file
 const baseRPC = "https://example-rpc-url.com"; // Replace with your base RPC URL
 const name = "group-1"; // Group name
 generateYAML(filename, baseRPC, name, {
-  threads: "4",
+  threads: 8,
+  fee: 5000,
 });

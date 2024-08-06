@@ -13,6 +13,9 @@ use rand::Rng;
 use solana_program::pubkey::Pubkey;
 use solana_rpc_client::spinner;
 use solana_sdk::signer::Signer;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 
 use crate::{
     args::MineArgs,
@@ -77,68 +80,100 @@ impl Miner {
         threads: u64,
         min_difficulty: u32,
     ) -> Solution {
-        // Dispatch job to each thread
+
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
+        let found_solution = Arc::new(AtomicBool::new(false));
+    
+        let start_time = Instant::now();
+    
         let handles: Vec<_> = (0..threads)
             .map(|i| {
-                std::thread::spawn({
-                    let proof = proof.clone();
-                    let progress_bar = progress_bar.clone();
+                let proof = proof.clone();
+                let progress_bar = progress_bar.clone();
+                let found_solution = found_solution.clone();
+                let start_time = start_time.clone();
+                std::thread::spawn(move || {
                     let mut memory = equix::SolverMemory::new();
-                    move || {
-                        let timer = Instant::now();
-                        let mut nonce = u64::MAX.saturating_div(threads).saturating_mul(i);
-                        let mut best_nonce = nonce;
-                        let mut best_difficulty = 0;
-                        let mut best_hash = Hash::default();
-                        loop {
-                            // Create hash
-                            if let Ok(hx) = drillx::hash_with_memory(
-                                &mut memory,
-                                &proof.challenge,
-                                &nonce.to_le_bytes(),
-                            ) {
-                                let difficulty = hx.difficulty();
-                                if difficulty.gt(&best_difficulty) {
-                                    best_nonce = nonce;
-                                    best_difficulty = difficulty;
-                                    best_hash = hx;
-                                }
-                            }
-
-                            // Exit if time has elapsed
-                            if nonce % 100 == 0 {
-                                if timer.elapsed().as_secs().ge(&cutoff_time) {
-                                    if best_difficulty.gt(&min_difficulty) {
-                                        // Mine until min difficulty has been met
-                                        break;
-                                    }
-                                } else if i == 0 {
-                                    progress_bar.set_message(format!(
-                                        "Mining... ({} sec remaining)",
-                                        cutoff_time.saturating_sub(timer.elapsed().as_secs()),
-                                    ));
-                                }
-                            }
-
-                            // Increment nonce
-                            nonce += 1;
+                    let mut nonce = u64::MAX.saturating_div(threads).saturating_mul(i);
+                    let mut best_nonce = nonce;
+                    let mut best_difficulty = 0;
+                    let mut best_hash = Hash::default();
+                    let mut increment: u64 = 1;
+                    loop {
+                        if found_solution.load(Ordering::Relaxed) {
+                            break;
                         }
-
-                        // Return the best nonce
-                        (best_nonce, best_difficulty, best_hash)
+    
+                        // Create hash
+                        if let Ok(hx) = drillx::hash_with_memory(
+                            &mut memory,
+                            &proof.challenge,
+                            &nonce.to_le_bytes(),
+                        ) {
+                            let difficulty = hx.difficulty();
+                            let elapsed_time = start_time.elapsed();
+                            if difficulty >= 20 {
+                                found_solution.store(true, Ordering::Relaxed);
+                                if elapsed_time < Duration::from_secs(60) {
+                                    // 如果未满60秒，等待至60秒
+                                    let wait_time = Duration::from_secs(60) - elapsed_time;
+                                    std::thread::sleep(wait_time);
+                                }
+                                return Some((nonce, difficulty, hx));
+                            }
+                            if difficulty.gt(&best_difficulty) {
+                                best_nonce = nonce;
+                                best_difficulty = difficulty;
+                                best_hash = hx;
+                                // 如果找到更好的难度，减小增量以更仔细地探索这个区域
+                                increment = increment.max(1) / 2;
+                            } else {
+                                // 如果没有改进，逐渐增加增量
+                                increment = increment.saturating_add(1);
+                            }
+                        }
+    
+                        // Exit if time has elapsed
+                        if nonce % 10 == 0 {
+                            let elapsed_time = start_time.elapsed().as_secs();
+                            if elapsed_time.ge(&cutoff_time) {
+                                if best_difficulty.gt(&min_difficulty) {
+                                    // Mine until min difficulty has been met
+                                    break;
+                                }
+                            } else if i == 0 {
+                                progress_bar.set_message(format!(
+                                    "Mining... ({} sec remaining) (bestdiff:{})",
+                                    cutoff_time.saturating_sub(elapsed_time),best_difficulty,
+                                ));
+                            }
+                        }
+    
+                        // 智能增加 Nonce
+                        nonce = nonce.wrapping_add(increment);
                     }
+    
+                    // Return the best nonce
+                    Some((best_nonce, best_difficulty, best_hash))
                 })
             })
             .collect();
-
+    
         // Join handles and return best nonce
         let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for h in handles {
-            if let Ok((nonce, difficulty, hash)) = h.join() {
+            if let Ok(Some((nonce, difficulty, hash))) = h.join() {
+                if difficulty >= 20 {
+                    progress_bar.finish_with_message(format!(
+                        "Found solution: {} (difficulty: {})",
+                        bs58::encode(hash.h).into_string(),
+                        difficulty
+                    ));
+                    return Solution::new(hash.d, nonce.to_le_bytes());
+                }
                 if difficulty > best_difficulty {
                     best_difficulty = difficulty;
                     best_nonce = nonce;
@@ -146,14 +181,14 @@ impl Miner {
                 }
             }
         }
-
+    
         // Update log
-        progress_bar.finish_with_message(format!(
+        progress_bar.set_message(format!(
             "Best hash: {} (difficulty: {})",
             bs58::encode(best_hash.h).into_string(),
             best_difficulty
         ));
-
+    
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }
 

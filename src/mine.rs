@@ -48,14 +48,14 @@ impl Miner {
                 proof,
                 cutoff_time,
                 args.threads,
-                config.min_difficulty as u32,
+                args.min_difficulty as u32,
             )
             .await;
 
             // Submit most difficult hash
             let mut compute_budget = 500_000;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
-            if self.should_reset(config).await {
+            if self.should_reset(config).await && rand::thread_rng().gen_range(0..100).eq(&0) {
                 compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
@@ -78,6 +78,7 @@ impl Miner {
         min_difficulty: u32,
     ) -> Solution {
         // Dispatch job to each thread
+        println!("min_difficulty is {:?}",min_difficulty);
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
         let handles: Vec<_> = (0..threads)
@@ -108,7 +109,7 @@ impl Miner {
                             }
 
                             // Exit if time has elapsed
-                            if nonce % 100 == 0 {
+                            if nonce % 200 == 0 {
                                 if timer.elapsed().as_secs().ge(&cutoff_time) {
                                     if best_difficulty.gt(&min_difficulty) {
                                         // Mine until min difficulty has been met

@@ -66,7 +66,7 @@ impl Miner {
                 solution,
             ));
             if  best_difficulty >= args.min_difficulty as u32  {
-                println!("best_difficulty: {} >= {}", best_difficulty, args.min_difficulty);
+                println!("best_difficulty: {}", args.min_difficulty);
                 self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();

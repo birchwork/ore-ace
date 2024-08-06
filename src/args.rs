@@ -73,9 +73,19 @@ pub struct MineArgs {
         short,
         value_name = "SECONDS",
         help = "The number seconds before the deadline to stop mining and start submitting",
-        default_value = "5"
+        default_value = "20"
     )]
     pub buffer_time: u64,
+
+    #[arg(
+        long,
+        short,
+        value_name = "MINDIFFICULTY",
+        help = "min difficulty",
+        default_value = "10",
+        global = true
+    )]
+    pub min_difficulty: u32,
 }
 
 #[derive(Parser, Debug)]

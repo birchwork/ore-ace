@@ -17,7 +17,7 @@ use solana_sdk::signer::Signer;
 use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
-    utils::{amount_u64_to_string, get_clock, get_config, get_proof_with_authority, proof_pubkey},
+    utils::{amount_u64_to_string, get_clock, get_config, get_proof_with_authority},
     Miner,
 };
 
@@ -30,36 +30,36 @@ impl Miner {
         // Check num threads
         self.check_num_cores(args.threads);
 
-        let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
-        println!(
-            "\nStake balance: {} ORE",
-            amount_u64_to_string(proof.balance)
-        );
         // Start mining loop
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
-
+            println!(
+                "\nStake balance: {} ORE",
+                amount_u64_to_string(proof.balance)
+            );
 
             // Calc cutoff time
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
 
             // Run drillx
-            let config = get_config(&self.rpc_client).await;
-            let solution = Self::find_hash_par(
-                proof,
-                cutoff_time,
-                args.threads,
-                config.min_difficulty as u32,
-            )
-            .await;
+            let solution =
+                Self::find_hash_par(proof, cutoff_time, args.threads, args.min_difficulty,args.nonce_num).await;
 
             // Submit most difficult hash
+            let config = get_config(&self.rpc_client).await;
             let mut compute_budget = 500_000;
-            let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
+            let mut ixs = vec![];
             if self.should_reset(config).await {
                 compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
+            }
+            if self.should_crown(config, proof).await {
+                compute_budget += 250_000;
+                ixs.push(ore_api::instruction::crown(
+                    signer.pubkey(),
+                    config.top_staker,
+                ))
             }
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
@@ -67,7 +67,7 @@ impl Miner {
                 find_bus(),
                 solution,
             ));
-            self.jito_send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
+            self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();
         }
@@ -78,6 +78,7 @@ impl Miner {
         cutoff_time: u64,
         threads: u64,
         min_difficulty: u32,
+        nonce_num:u64,
     ) -> Solution {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
@@ -87,7 +88,7 @@ impl Miner {
                 std::thread::spawn({
                     let proof = proof.clone();
                     let progress_bar = progress_bar.clone();
-                    let mut memory = equix::SolverMemory::new();
+                    let mut memory: equix::SolverMemory = equix::SolverMemory::new();
                     move || {
                         let timer = Instant::now();
                         let mut nonce = u64::MAX.saturating_div(threads).saturating_mul(i);
@@ -110,7 +111,7 @@ impl Miner {
                             }
 
                             // Exit if time has elapsed
-                            if nonce % 100 == 0 {
+                            if nonce % nonce_num == 0 {
                                 if timer.elapsed().as_secs().ge(&cutoff_time) {
                                     if best_difficulty.gt(&min_difficulty) {
                                         // Mine until min difficulty has been met
@@ -149,6 +150,13 @@ impl Miner {
             }
         }
 
+        // Update log
+        progress_bar.finish_with_message(format!(
+            "Best hash: {} (difficulty: {})",
+            bs58::encode(best_hash.h).into_string(),
+            best_difficulty
+        ));
+
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }
 
@@ -163,6 +171,10 @@ impl Miner {
                 num_cores
             );
         }
+    }
+
+    async fn should_crown(&self, config: Config, proof: Proof) -> bool {
+        proof.balance.gt(&config.max_stake)
     }
 
     async fn should_reset(&self, config: Config) -> bool {

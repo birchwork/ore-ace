@@ -5,7 +5,7 @@ use spl_token::amount_to_ui_amount;
 use crate::{
     args::ClaimArgs,
     send_and_confirm::ComputeBudget,
-    utils::{ask_confirm, get_proof_with_authority},
+    utils::{ask_confirm, get_proof},
     Miner,
 };
 
@@ -13,7 +13,7 @@ impl Miner {
     pub async fn close(&self) {
         // Confirm proof exists
         let signer = self.signer();
-        let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
+        let proof = get_proof(&self.rpc_client, signer.pubkey()).await;
 
         // Confirm the user wants to close.
         if !ask_confirm(

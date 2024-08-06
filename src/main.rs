@@ -15,20 +15,16 @@ mod send_and_confirm;
 mod stake;
 mod upgrade;
 mod utils;
-mod jito_send_and_confirm;
 
 use std::sync::Arc;
 
 use args::*;
 use clap::{command, Parser, Subcommand};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    signature::Keypair,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
 struct Miner {
-    pub private_key: Option<String>,
+    pub keypair_filepath: Option<String>,
     pub priority_fee: u64,
     pub rpc_client: Arc<RpcClient>,
 }
@@ -92,11 +88,11 @@ struct Args {
 
     #[arg(
         long,
-        value_name = "private_key",
-        help = "Filepath to private_key to use",
+        value_name = "KEYPAIR_FILEPATH",
+        help = "Filepath to keypair to use",
         global = true
     )]
-    private_key: Option<String>,
+    keypair: Option<String>,
 
     #[arg(
         long,
@@ -129,13 +125,13 @@ async fn main() {
 
     // Initialize miner.
     let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
-    let default_private_key = args.private_key.unwrap_or(cli_config.keypair_path);
+    let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
 
     let miner = Arc::new(Miner::new(
         Arc::new(rpc_client),
         args.priority_fee,
-        Some(default_private_key),
+        Some(default_keypair),
     ));
 
     // Execute user command.
@@ -181,17 +177,17 @@ impl Miner {
     pub fn new(
         rpc_client: Arc<RpcClient>,
         priority_fee: u64,
-        private_key: Option<String>,
+        keypair_filepath: Option<String>,
     ) -> Self {
         Self {
             rpc_client,
-            private_key,
+            keypair_filepath,
             priority_fee,
         }
     }
 
     pub fn signer(&self) -> Keypair {
-        match self.private_key.clone() {
+        match self.keypair_filepath.clone() {
             Some(key) => Keypair::from_base58_string(&key),
             None => panic!("No Private Key provided"),
         }

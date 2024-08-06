@@ -1,3 +1,13 @@
+/logs
+/pools
+/stats
+/wallets
 /target
 output.log
-/transfer/node_modules
+ore_env.priv.sh
+ore
+currentPriceOf*.txt
+cv_debug.log
+node_modules
+dashboard/build
+dashboard/public/dashboarddata

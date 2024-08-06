@@ -49,6 +49,7 @@ impl Miner {
                 cutoff_time,
                 args.threads,
                 args.min_difficulty as u32,
+                args.nonce_num,
             )
             .await;
 
@@ -65,15 +66,17 @@ impl Miner {
                 find_bus(),
                 solution,
             ));
-            if  best_difficulty >= args.min_difficulty as u32  {
+            if best_difficulty >= args.min_difficulty as u32 {
                 println!("best_difficulty: {}", args.min_difficulty);
                 self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
-                .await
-                .ok();
+                    .await
+                    .ok();
             } else {
-                println!("skipped commit! best_difficulty: {} < {}", best_difficulty, args.min_difficulty);
+                println!(
+                    "skipped commit! best_difficulty: {} < {}",
+                    best_difficulty, args.min_difficulty
+                );
             }
-
         }
     }
 
@@ -82,12 +85,13 @@ impl Miner {
         cutoff_time: u64,
         threads: u64,
         min_difficulty: u32,
+        nonce_num: u64,
     ) -> (Solution, u32) {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
         let random_start: u64 = rand::thread_rng().gen();
- 
+
         let handles: Vec<_> = (0..threads)
             .map(|i| {
                 std::thread::spawn({
@@ -96,7 +100,9 @@ impl Miner {
                     let mut memory = equix::SolverMemory::new();
                     move || {
                         let timer = Instant::now();
-                        let mut nonce = random_start.saturating_add(u64::MAX.saturating_div(threads)).saturating_mul(i);
+                        let mut nonce = random_start
+                            .saturating_add(u64::MAX.saturating_div(threads))
+                            .saturating_mul(i);
                         let mut best_nonce = nonce;
                         let mut best_difficulty = 0;
                         let mut best_hash = Hash::default();
@@ -116,7 +122,7 @@ impl Miner {
                             }
 
                             // Exit if time has elapsed
-                            if nonce % 100 == 0 {
+                            if nonce % nonce_num == 0 {
                                 if timer.elapsed().as_secs().ge(&cutoff_time) {
                                     if best_difficulty.gt(&min_difficulty) {
                                         // Mine until min difficulty has been met
@@ -162,7 +168,10 @@ impl Miner {
             best_difficulty
         ));
 
-        (Solution::new(best_hash.d, best_nonce.to_le_bytes()), best_difficulty)
+        (
+            Solution::new(best_hash.d, best_nonce.to_le_bytes()),
+            best_difficulty,
+        )
     }
 
     pub fn check_num_cores(&self, threads: u64) {

@@ -86,6 +86,16 @@ pub struct MineArgs {
         global = true
     )]
     pub min_difficulty: u32,
+
+    #[arg(
+        long,
+        short,
+        value_name = "NONCE_NUM",
+        help = "NONCE_NUM",
+        default_value = "18",
+        global = true
+    )]
+    pub nonce_num: u64,
 }
 
 #[derive(Parser, Debug)]

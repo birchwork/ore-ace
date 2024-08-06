@@ -82,7 +82,7 @@ pub struct MineArgs {
         short,
         value_name = "MINDIFFICULTY",
         help = "min difficulty",
-        default_value = "20",
+        default_value = "10",
         global = true
     )]
     pub min_difficulty: u32,

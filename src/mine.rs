@@ -39,6 +39,7 @@ impl Miner {
         println!("jito fee: {}", &self.priority_fee);
         println!("gas fee payer: {}", &self.fee_payer().pubkey());
 
+        let mut best_hash: String = String::from("");
         // Start mining loop
         loop {
             // Fetch proof
@@ -48,7 +49,7 @@ impl Miner {
             let cutoff_time = args.buffer_time;
             println!("\nStake: {} ORE\n", amount_u64_to_string(proof.balance));
             // Run drillx
-            let (solution, best_difficulty) =
+            let (solution, best_difficulty, new_hash) =
                 Self::find_hash_par(proof, cutoff_time, args.threads, args.min as u32).await;
 
             // Submit most difficult hash
@@ -75,6 +76,12 @@ impl Miner {
                 tip = self.priority_fee
             }
 
+            if best_hash == new_hash {
+                tip = 3_000_000.min((tip as f64 * 1.5) as u64);
+            }
+
+            best_hash = new_hash;
+
             self.send_and_confirm_by_jito(&ixs, ComputeBudget::Fixed(compute_budget), tip)
                 .await;
         }
@@ -85,7 +92,7 @@ impl Miner {
         cutoff_time: u64,
         threads: u64,
         min_difficulty: u32,
-    ) -> (Solution, u32) {
+    ) -> (Solution, u32, String) {
         std::fs::remove_dir_all("data").ok();
         std::fs::create_dir_all("data").ok();
         let progress_bar = Arc::new(spinner::new_progress_bar());
@@ -181,6 +188,7 @@ impl Miner {
         (
             Solution::new(best_hash.d, best_nonce.to_le_bytes()),
             best_difficulty,
+            bs58::encode(best_hash.h).into_string(),
         )
     }
 

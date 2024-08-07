@@ -39,7 +39,6 @@ impl Miner {
             // Fetch proof
             let config = get_config(&self.rpc_client).await;
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
-            println!("proof:{:?}", proof.challenge);
             // Calc cutoff time
             let cutoff_time = args.buffer_time;
             println!("\nStake: {} ORE\n", amount_u64_to_string(proof.balance));

@@ -15,7 +15,6 @@ use solana_sdk::signer::Signer;
 use std::{path::Path, sync::Arc, time::Instant};
 use tokio::sync::RwLock;
 
-
 use crate::{
     args::MineArgs,
     jito::JitoTips,
@@ -33,6 +32,12 @@ impl Miner {
         // Check num threads
         let tips = Arc::new(RwLock::new(JitoTips::default()));
         self.check_num_cores(args.threads);
+
+        println!("Threads: {}", args.threads);
+        println!("Cutoff time: {} seconds", args.buffer_time);
+        println!("Minimum difficulty: {}", args.min);
+        println!("jito fee: {}", &self.priority_fee);
+        println!("gas fee payer: {}", &self.fee_payer().pubkey());
 
         // Start mining loop
         loop {
@@ -100,6 +105,7 @@ impl Miner {
                         let mut best_nonce = nonce;
                         let mut best_difficulty = 0;
                         let mut best_hash = Hash::default();
+                        let mut increment: u64 = 1;
                         loop {
                             // Create hash
                             if let Ok(hx) = drillx::hash_with_memory(
@@ -118,6 +124,9 @@ impl Miner {
                                     best_nonce = nonce;
                                     best_difficulty = difficulty;
                                     best_hash = hx;
+                                    increment = increment.max(1) / 2;
+                                } else {
+                                    increment = increment.saturating_add(1);
                                 }
                             }
 
@@ -137,7 +146,7 @@ impl Miner {
                             }
 
                             // Increment nonce
-                            nonce += 1;
+                            nonce = nonce.wrapping_add(increment);
                         }
 
                         // Return the best nonce

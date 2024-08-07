@@ -62,13 +62,11 @@ impl Miner {
             let tips = *tips.read().await;
             let mut tip = self.priority_fee;
             if best_difficulty >= 22 {
-                tip = 100000.min(tips.p75() + 1);
+                tip = 100000.max(tips.p75() + 1);
             } else if best_difficulty >= 20 {
-                tip = 60000.min(tips.p75() + 1);
-            } else if best_difficulty >= 16 {
-                tip = 35000.min(tips.p50() + 1);
-            } else {
-                tip = 25000.min(tips.p50() + 1);
+                tip = 60000.max(tips.p75() + 1);
+            }  else {
+                tip = self.priority_fee
             }
 
             self.send_and_confirm_by_jito(&ixs, ComputeBudget::Fixed(compute_budget), tip)

@@ -54,10 +54,11 @@ impl Miner {
     ) -> ClientResult<Signature> {
         let progress_bar = spinner::new_progress_bar();
         let signer = self.signer();
+        let fee_payer = self.fee_payer();
         let client = self.rpc_client.clone();
 
         // Return error, if balance is zero
-        if let Ok(balance) = client.get_balance(&signer.pubkey()).await {
+        if let Ok(balance) = client.get_balance(&fee_payer.pubkey()).await {
             if balance <= sol_to_lamports(MIN_SOL_BALANCE) {
                 panic!(
                     "{} Insufficient balance: {} SOL\nPlease top up with at least {} SOL",
@@ -92,14 +93,14 @@ impl Miner {
             max_retries: Some(RPC_RETRIES),
             min_context_slot: None,
         };
-        let mut tx = Transaction::new_with_payer(&final_ixs, Some(&signer.pubkey()));
+        let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
 
         // Sign tx
         let (hash, _slot) = client
             .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
             .await
             .unwrap();
-        tx.sign(&[&signer], hash);
+        tx.sign(&[&signer, &fee_payer], hash);
 
         // Submit tx
         let mut attempts = 0;
@@ -240,7 +241,7 @@ impl Miner {
         let mut latest_slot = _slot;
         let mut landed_tx = vec![];
 
-        tx.sign(&[&signer], hash);
+        tx.sign(&[&signer, &fee_payer], hash);
         let mut bundle = Vec::with_capacity(5);
         bundle.push(tx);
         let task = tokio::spawn(async move { jito::send_bundle(bundle).await });

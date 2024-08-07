@@ -12,8 +12,9 @@ use solana_program::pubkey::Pubkey;
 use solana_rpc_client::spinner;
 use solana_sdk::signer::Signer;
 
-use std::{sync::Arc, time::Instant};
+use std::{path::Path, sync::Arc, time::Instant};
 use tokio::sync::RwLock;
+
 
 use crate::{
     args::MineArgs,
@@ -38,6 +39,7 @@ impl Miner {
             // Fetch proof
             let config = get_config(&self.rpc_client).await;
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
+            println!("proof:{:?}", proof.challenge);
             // Calc cutoff time
             let cutoff_time = args.buffer_time;
             println!("\nStake: {} ORE\n", amount_u64_to_string(proof.balance));
@@ -65,7 +67,7 @@ impl Miner {
                 tip = 100000.max(tips.p75() + 1);
             } else if best_difficulty >= 20 {
                 tip = 60000.max(tips.p75() + 1);
-            }  else {
+            } else {
                 tip = self.priority_fee
             }
 
@@ -80,15 +82,20 @@ impl Miner {
         threads: u64,
         min_difficulty: u32,
     ) -> (Solution, u32) {
+        std::fs::remove_dir_all("data").ok();
+        std::fs::create_dir_all("data").ok();
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
-        let handles: Vec<_> = (0..threads)
+        let handles: Vec<_> = (0..(threads))
+            //      .into_iter()
             .map(|i| {
-                std::thread::spawn({
-                    let proof = proof.clone();
-                    let progress_bar = progress_bar.clone();
-                    let mut memory = equix::SolverMemory::new();
-                    move || {
+                tokio::spawn({
+                    let value = progress_bar.clone();
+                    async move {
+                        // dbg!(i);
+                        let progress_bar = value.clone();
+                        let mut memory = equix::SolverMemory::new();
+
                         let timer = Instant::now();
                         let mut nonce = u64::MAX.saturating_div(threads).saturating_mul(i);
                         let mut best_nonce = nonce;
@@ -102,6 +109,12 @@ impl Miner {
                                 &nonce.to_le_bytes(),
                             ) {
                                 let difficulty = hx.difficulty();
+                                let name = format!("data/{}.txt", i);
+                                let path = Path::new(name.as_str());
+                                let mut content = std::fs::read_to_string(path).unwrap_or_default();
+                                content.push_str(format!("\n{}", difficulty).as_str());
+                                std::fs::write(path, content).unwrap();
+
                                 if difficulty.gt(&best_difficulty) {
                                     best_nonce = nonce;
                                     best_difficulty = difficulty;
@@ -112,7 +125,7 @@ impl Miner {
                             // Exit if time has elapsed
                             if nonce % 100 == 0 {
                                 if timer.elapsed().as_secs().ge(&cutoff_time) {
-                                    if best_difficulty.gt(&min_difficulty) {
+                                    if best_difficulty.ge(&min_difficulty) {
                                         // Mine until min difficulty has been met
                                         break;
                                     }
@@ -134,21 +147,22 @@ impl Miner {
                 })
             })
             .collect();
+        let joined = futures::future::join_all(handles).await;
 
-        // Join handles and return best nonce
-        let mut best_nonce = 0;
-        let mut best_difficulty = 0;
-        let mut best_hash = Hash::default();
-        for h in handles {
-            if let Ok((nonce, difficulty, hash)) = h.join() {
-                if difficulty > best_difficulty {
-                    best_difficulty = difficulty;
-                    best_nonce = nonce;
-                    best_hash = hash;
+        let (best_nonce, best_difficulty, best_hash) = joined.into_iter().fold(
+            (0, 0, Hash::default()),
+            |(best_nonce, best_difficulty, best_hash), h| {
+                if let Ok((nonce, difficulty, hash)) = h {
+                    if difficulty > best_difficulty {
+                        (nonce, difficulty, hash)
+                    } else {
+                        (best_nonce, best_difficulty, best_hash)
+                    }
+                } else {
+                    (best_nonce, best_difficulty, best_hash)
                 }
-            }
-        }
-
+            },
+        );
         // Update log
         progress_bar.finish_with_message(format!(
             "Best hash: {} (difficulty: {})",

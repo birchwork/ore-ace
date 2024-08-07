@@ -1,6 +1,9 @@
 use rand::Rng;
 use solana_sdk::{pubkey, pubkey::Pubkey};
 
+
+pub const SLOT_EXPIRATION: u64 = 151 + 5;
+
 pub const JITO_RECIPIENTS: [Pubkey; 8] = [
     pubkey!("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5"),
     pubkey!("HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe"),

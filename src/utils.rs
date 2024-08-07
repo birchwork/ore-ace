@@ -10,7 +10,8 @@ use ore_api::{
 use ore_utils::AccountDeserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{pubkey::Pubkey, sysvar};
-use solana_sdk::clock::Clock;
+use solana_sdk::{clock::Clock, signature::Signature, commitment_config::CommitmentConfig};
+use solana_transaction_status::TransactionStatus;
 use spl_associated_token_account::get_associated_token_address;
 
 pub async fn _get_treasury(client: &RpcClient) -> Treasury {
@@ -87,4 +88,22 @@ pub fn proof_pubkey(authority: Pubkey) -> Pubkey {
 #[cached]
 pub fn treasury_tokens_pubkey() -> Pubkey {
     get_associated_token_address(&TREASURY_ADDRESS, &MINT_ADDRESS)
+}
+
+
+
+pub fn find_landed_txs(signatures: &[Signature], statuses: Vec<Option<TransactionStatus>>) -> Vec<Signature> {
+    let landed_tx = statuses
+        .into_iter()
+        .zip(signatures.iter())
+        .filter_map(|(status, sig)| {
+            if status?.satisfies_commitment(CommitmentConfig::confirmed()) {
+                Some(*sig)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    landed_tx
 }

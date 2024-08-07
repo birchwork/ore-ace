@@ -71,9 +71,18 @@ pub struct MineArgs {
     #[arg(
         long,
         short,
+        value_name = "min",
+        help = "The number of CPU threads to allocate to mining",
+        default_value = "13"
+    )]
+    pub min: u64,
+
+    #[arg(
+        long,
+        short,
         value_name = "SECONDS",
         help = "The number seconds before the deadline to stop mining and start submitting",
-        default_value = "5"
+        default_value = "60"
     )]
     pub buffer_time: u64,
 }

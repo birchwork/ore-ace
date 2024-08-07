@@ -6,8 +6,9 @@ use serde_json::{json, Value};
 use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::Transaction};
 use solana_transaction_status::{Encodable, EncodedTransaction, UiTransactionEncoding};
 use tokio::{sync::RwLock, task::JoinHandle};
+use tracing::info;
 
-use crate::constant;
+use crate::{constant, Miner};
 
 #[derive(Debug, Deserialize)]
 pub struct JitoResponse<T> {
@@ -42,9 +43,7 @@ where
 
     let response: T = match serde_json::from_str(&text) {
         Ok(response) => response,
-        Err(err) => {
-            eyre::bail!("fail to deserialize response: {err:#}, response: {text}, status: {status}")
-        }
+        Err(err) => eyre::bail!("fail to deserialize response: {err:#}, response: {text}, status: {status}"),
     };
 
     Ok(response)
@@ -91,6 +90,16 @@ pub struct JitoTips {
 
     #[serde(rename = "landed_tips_99th_percentile")]
     pub p99_landed: f64,
+}
+
+impl JitoTips {
+    pub fn p50(&self) -> u64 {
+        (self.p50_landed * 1e9f64) as u64
+    }
+
+    pub fn p75(&self) -> u64 {
+        (self.p75_landed * 1e9f64) as u64
+    }
 }
 
 impl std::fmt::Display for JitoTips {
@@ -155,10 +164,4 @@ pub async fn subscribe_jito_tips(tips: Arc<RwLock<JitoTips>>) -> JoinHandle<()> 
             }
         }
     })
-}
-
-impl JitoTips {
-    pub fn p50(&self) -> u64 {
-        (self.p50_landed * 1e9f64) as u64
-    }
 }

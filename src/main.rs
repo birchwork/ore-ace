@@ -31,7 +31,8 @@ struct Miner {
     pub private_key: Option<String>,
     pub priority_fee: u64,
     pub rpc_client: Arc<RpcClient>,
-    tips: Arc<RwLock<JitoTips>>,
+    pub tips: Arc<RwLock<JitoTips>>,
+    pub fee_payer_filepath: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -108,6 +109,14 @@ struct Args {
     )]
     priority_fee: u64,
 
+    #[arg(
+        long,
+        value_name = "FEE_PAYER_FILEPATH",
+        help = "Filepath to keypair to use for fee payer",
+        global = true
+    )]
+    fee_payer_filepath: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -130,7 +139,8 @@ async fn main() {
 
     // Initialize miner.
     let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
-    let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path);
+    let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path.clone());
+    let fee_payer_filepath = args.fee_payer_filepath.unwrap_or(cli_config.keypair_path.clone());
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
 
     // jito
@@ -142,6 +152,7 @@ async fn main() {
         args.priority_fee,
         Some(default_keypair),
         tips,
+        Some(fee_payer_filepath),
     ));
 
     // Execute user command.
@@ -189,12 +200,14 @@ impl Miner {
         priority_fee: u64,
         private_key: Option<String>,
         tips: Arc<RwLock<JitoTips>>,
+        fee_payer_filepath: Option<String>,
     ) -> Self {
         Self {
             rpc_client,
             private_key,
             priority_fee,
             tips,
+            fee_payer_filepath
         }
     }
 
@@ -202,6 +215,13 @@ impl Miner {
         match self.private_key.clone() {
             Some(key) => Keypair::from_base58_string(&key),
             None => panic!("No Private Key provided"),
+        }
+    }
+
+    pub fn fee_payer(&self) -> Keypair {
+        match self.fee_payer_filepath.clone() {
+            Some(key) => Keypair::from_base58_string(&key),
+            None => panic!("No fee payer keypair provided"),
         }
     }
 }
